@@ -58,6 +58,19 @@ impl<'w, 's> InputEvents<'w, 's> {
 #[derive(Resource, Default)]
 pub struct TouchId(pub Option<u64>);
 
+/// Initialized once at runtime in `process_input_system`,
+/// to know interally which native platform we're running on. Leverages user-agent on web.
+#[derive(Default, Debug, Clone, PartialEq)]
+pub enum RuntimeHostPlatform {
+    /// Unknown platform, not relevant to our logic.
+    #[default]
+    Other,
+    /// Apple desktop
+    Macintosh,
+    /// Windows
+    Windows,
+}
+
 #[allow(missing_docs)]
 #[derive(SystemParam)]
 pub struct InputResources<'w, 's> {
@@ -86,7 +99,35 @@ pub fn process_input_system(
     egui_settings: Res<EguiSettings>,
     mut egui_mouse_position: ResMut<EguiMousePosition>,
     time: Res<Time<Real>>,
+    mut runtime_host_platform: Local<RuntimeHostPlatform>,
 ) {
+    use std::sync::Once;
+    static START: Once = Once::new();
+
+    START.call_once(|| {
+        // run initialization here
+        if cfg!(target_os = "macos") {
+            *runtime_host_platform = RuntimeHostPlatform::Macintosh;
+        } else if cfg!(target_os = "windows") {
+            *runtime_host_platform = RuntimeHostPlatform::Windows
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let window = web_sys::window().expect("window");
+
+            let nav = window.navigator();
+            let user_agent = nav.user_agent();
+            if let Ok(user_agent) = user_agent {
+                log::debug!("{:?}", user_agent);
+                if user_agent.contains("(Windows") {
+                    *runtime_host_platform = RuntimeHostPlatform::Windows;
+                } else if user_agent.contains("Macintosh;") {
+                    *runtime_host_platform = RuntimeHostPlatform::Macintosh
+                }
+            }
+        }
+    });
     // This is a workaround for Windows. For some reason, `WindowFocused` event isn't fired
     // when a window is created.
     if let Some(event) = input_events.ev_window_created.read().last() {
@@ -112,12 +153,16 @@ pub fn process_input_system(
     let win = input_resources.keyboard_input.pressed(KeyCode::SuperLeft)
         || input_resources.keyboard_input.pressed(KeyCode::SuperRight);
 
-    let mac_cmd = if cfg!(target_os = "macos") {
+    let mac_cmd = if *runtime_host_platform == RuntimeHostPlatform::Macintosh {
         win
     } else {
         false
     };
-    let command = if cfg!(target_os = "macos") { win } else { ctrl };
+    let command = if *runtime_host_platform == RuntimeHostPlatform::Windows {
+        win
+    } else {
+        ctrl
+    };
 
     let modifiers = egui::Modifiers {
         alt,
@@ -220,7 +265,7 @@ pub fn process_input_system(
         }
     }
 
-    if !command || cfg!(target_os = "windows") && ctrl && alt {
+    if !command || *runtime_host_platform == RuntimeHostPlatform::Windows && ctrl && alt {
         for event in input_events.ev_received_character.read() {
             if !event.char.is_control() {
                 let mut context = context_params.contexts.get_mut(event.window).unwrap();
