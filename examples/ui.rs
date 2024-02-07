@@ -25,13 +25,7 @@ fn main() {
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .insert_resource(Msaa::Sample4)
         .init_resource::<UiState>()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                prevent_default_event_handling: false,
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(DefaultPlugins)
         .add_plugins(EguiPlugin)
         .add_systems(Startup, configure_visuals_system)
         .add_systems(Startup, configure_ui_state_system)
@@ -61,7 +55,7 @@ fn configure_ui_state_system(mut ui_state: ResMut<UiState>) {
 }
 
 fn update_ui_scale_factor_system(
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     mut toggle_scale_factor: Local<Option<bool>>,
     mut egui_settings: ResMut<EguiSettings>,
     windows: Query<&Window, With<PrimaryWindow>>,
